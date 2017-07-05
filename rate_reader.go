@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func rate_reader() {
+func rateReader() {
 	var prevInBytes int64
 	var prevOutBytes int64
 	var rateInterval int64 = 10
@@ -64,7 +64,7 @@ func readRate() (int64, int64, error) {
 		Connections map[string]connState `json:"connections"`
 	}
 
-	input, err := query_syncthing(config.Url + "/rest/system/connections")
+	input, err := querySyncthing(config.Url + "/rest/system/connections")
 	if err != nil {
 		log.Println(err)
 		return 0, 0, err

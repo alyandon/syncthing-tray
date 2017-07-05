@@ -5,12 +5,48 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net/url"
 	"time"
 
 	"github.com/alex2108/systray"
 )
 
-func get_folder_state() error {
+func buildURL(path string, values url.Values) *url.URL {
+	request, _ := url.Parse(config.Url + path)
+	if values != nil {
+		request.RawQuery = values.Encode()
+	}
+	return request
+}
+
+func buildFolderStateURL(values url.Values) *url.URL {
+	return buildURL("/rest/db/status", values)
+}
+
+func buildConnectionsURL() *url.URL {
+	return buildURL("/rest/system/connections", nil)
+}
+
+func buildStartTimeURL() *url.URL {
+	return buildURL("/rest/system/status", nil)
+}
+
+func buildConfigURL() *url.URL {
+	return buildURL("/rest/system/config", nil)
+}
+
+func buildVersionURL() *url.URL {
+	return buildURL("/rest/system/version", nil)
+}
+
+func buildDeviceFolderCompletionURL(device string, folder string) *url.URL {
+	values := url.Values{}
+	values.Add("device", device)
+	values.Add("folder", folder)
+	return buildURL("/rest/db/completion", values)
+}
+
+func getFolderState() error {
 	for key, rep := range folder {
 		mutex.Lock()
 		if folder[key].completion >= 0 {
@@ -18,7 +54,15 @@ func get_folder_state() error {
 			mutex.Unlock()
 			continue
 		}
-		r_json, err := query_syncthing(config.Url + "/rest/db/status?folder=" + rep.id)
+		values := url.Values{}
+		values.Add("folder", rep.id)
+		query := buildFolderStateURL(values)
+		response, err := querySyncthing(query.String())
+
+		if err != nil {
+			log.Println("error fetching folder info querySyncthing")
+			log.Println("received reponse: " + response)
+		}
 		log.Println("getting state for folder", rep.id)
 		if err == nil {
 			type Folderstate struct {
@@ -28,18 +72,20 @@ func get_folder_state() error {
 			}
 
 			var m Folderstate
-			json_err := json.Unmarshal([]byte(r_json), &m)
+			jsonErr := json.Unmarshal([]byte(response), &m)
 
-			if json_err != nil {
+			if jsonErr != nil {
+				log.Println("response: " + response)
 				mutex.Unlock()
-				return json_err
-			} else {
-
-				folder[key].state = m.State
-				folder[key].needFiles = m.NeedFiles
-				folder[key].completion = 100 - 100*float64(m.NeedFiles)/math.Max(float64(m.GlobalFiles), 1) // max to prevent division by zero
-
+				return jsonErr
 			}
+
+			folder[key].state = m.State
+			folder[key].needFiles = m.NeedFiles
+			log.Println("needfiles", m.NeedFiles, "globalfiles", m.GlobalFiles)
+			folder[key].completion = 100 - 100*float64(m.NeedFiles)/math.Max(float64(m.GlobalFiles), 1) // max to prevent division by zero
+			log.Println("calculated completion%", folder[key].completion)
+
 		} else {
 			mutex.Unlock()
 			return err
@@ -53,11 +99,12 @@ func get_folder_state() error {
 
 	return nil
 }
-func get_connections() error {
+func getConnections() error {
 	mutex.Lock()
 	defer mutex.Unlock()
 	log.Println("getting connections")
-	input, err := query_syncthing(config.Url + "/rest/system/connections")
+	query := buildConnectionsURL()
+	input, err := querySyncthing(query.String())
 	if err != nil {
 		log.Println(err)
 		return err
@@ -65,34 +112,35 @@ func get_connections() error {
 	var res map[string]interface{}
 	err = json.Unmarshal([]byte(input), &res)
 
-	for deviceId, _ := range device {
-		device[deviceId].connected = false
+	for deviceID := range device {
+		device[deviceID].connected = false
 	}
 
-	for deviceId, m := range res["connections"].(map[string]interface{}) {
+	for deviceID, m := range res["connections"].(map[string]interface{}) {
 		connectionState := m.(map[string]interface{})
-		device[deviceId].connected = connectionState["connected"].(bool)
+		device[deviceID].connected = connectionState["connected"].(bool)
 	}
 
 	return err
 }
-func update_ul() error {
+func updateUl() error {
 
 	type Completion struct {
 		Completion float64
 	}
-	for r, r_info := range folder {
-		for _, n := range r_info.sharedWith {
+	for folderName, folderInfo := range folder {
+		for _, deviceName := range folderInfo.sharedWith {
 			mutex.Lock()
-			if device[n].folderCompletion[r] >= 0 {
-				log.Println("already got info for device", n, "folder", r, "from events, skipping")
+			if device[deviceName].folderCompletion[folderName] >= 0 {
+				log.Println("already got info for device", deviceName, "folder", folderName, "from events, skipping")
 				mutex.Unlock()
 				continue
 			}
 
-			if device[n].connected { // only query connected devices
-				out, err := query_syncthing(config.Url + "/rest/db/completion?device=" + n + "&folder=" + r)
-				log.Println("updating upload status for device", n, "folder", r)
+			if device[deviceName].connected { // only query connected devices
+				query := buildDeviceFolderCompletionURL(deviceName, folderName)
+				out, err := querySyncthing(query.String())
+				log.Println("updating upload status for device", deviceName, "folder", folderName)
 				if err != nil {
 					log.Println(err)
 					mutex.Unlock()
@@ -105,12 +153,12 @@ func update_ul() error {
 					mutex.Unlock()
 					return err
 				}
-				device[n].folderCompletion[r] = m.Completion
+				device[deviceName].folderCompletion[folderName] = m.Completion
 			}
 			mutex.Unlock()
 			// let events be processed, might save some expensive api calls
 			for len(eventChan) > 0 {
-				time.Sleep(time.Millisecond)
+				time.Sleep(50 * time.Millisecond)
 			}
 		}
 	}
@@ -122,7 +170,8 @@ func getStartTime() (string, error) {
 	type StStatus struct {
 		StartTime string
 	}
-	out, err := query_syncthing(config.Url + "/rest/system/status")
+	query := buildStartTimeURL()
+	out, err := querySyncthing(query.String())
 
 	if err != nil {
 		log.Println(err)
@@ -131,6 +180,7 @@ func getStartTime() (string, error) {
 	var m StStatus
 	err = json.Unmarshal([]byte(out), &m)
 	if err != nil {
+		log.Println(out)
 		log.Println(err)
 		return "", err
 	}
@@ -142,7 +192,6 @@ func getStartTime() (string, error) {
 // helper to get a lock before starting the new thread that can run in background after a lock is aquired
 func initialize() {
 	// block all before config is read
-
 	log.Println("wating for lock")
 	mutex.Lock()
 	log.Println("wating for event lock")
@@ -158,9 +207,14 @@ func initializeLocked() {
 		if startTime != currentStartTime {
 			log.Println("syncthing restarted at", currentStartTime)
 			startTime = currentStartTime
-			since_events = 0
+			sinceEvents = 0
 		}
-		err = get_config()
+		err = getConfig()
+		if err != nil {
+			log.Println("error in getConfig")
+		}
+	} else {
+		log.Println("error in getStartTime")
 	}
 
 	// clean out old events
@@ -177,19 +231,30 @@ func initializeLocked() {
 
 	// get current state
 	if err == nil {
-		err = get_folder_state()
+		err = getFolderState()
+		if err != nil {
+			log.Println("error in getFolderState")
+		}
 	}
+
 	if err == nil {
-		err = get_connections()
+		err = getConnections()
+		if err != nil {
+			log.Println("error in getConnections")
+		}
 	}
+
 	if err == nil {
-		err = update_ul()
+		err = updateUl()
+		if err != nil {
+			log.Println("error in updateUl")
+		}
 	}
 
 	if err != nil {
 		eventMutex.Lock()
 		mutex.Lock()
-		log.Println(err)
+		log.Printf("err: %+v", err)
 		log.Println("error getting syncthing config -> retry in 5s")
 
 		trayMutex.Lock()
@@ -204,13 +269,19 @@ func initializeLocked() {
 	updateStatus()
 
 }
-func get_config() error {
+func getConfig() error {
 	log.Println("reading config from syncthing")
 	//create empty state
 	device = make(map[string]*Device)
 	folder = make(map[string]*Folder)
 
-	r_json, err := query_syncthing(config.Url + "/rest/system/config")
+	query := buildConfigURL()
+	response, err := querySyncthing(query.String())
+
+	if err != nil {
+		log.Println("error in querySyncthing")
+		log.Println("response was: " + response)
+	}
 
 	if err == nil {
 		type SyncthingConfigDevice struct {
@@ -231,34 +302,35 @@ func get_config() error {
 		}
 
 		var m SyncthingConfig
-		json_err := json.Unmarshal([]byte(r_json), &m)
+		response := json.Unmarshal([]byte(response), &m)
 
-		if json_err != nil {
-			return json_err
-		} else { // save config in structs
-
-			//save Devices
-			for _, v := range m.Devices {
-				device[v.Deviceid] = &Device{v.Name, make(map[string]float64), false}
-			}
-
-			//save Folders
-			for _, v := range m.Folders {
-				folder[v.Id] = &Folder{v.Id, -1, "invalid", 0, make([]string, 0)} //id, completion, state, needFiles, sharedWith
-				for _, v2 := range v.Devices {
-					folder[v.Id].sharedWith = append(folder[v.Id].sharedWith, v2.Deviceid)
-					device[v2.Deviceid].folderCompletion[v.Id] = -1
-				}
-			}
-
+		if response != nil {
+			return response
 		}
+
+		// save config in structs
+		// save Devices
+		for _, v := range m.Devices {
+			device[v.Deviceid] = &Device{v.Name, make(map[string]float64), false}
+		}
+
+		// save Folders
+		for _, v := range m.Folders {
+			folder[v.Id] = &Folder{v.Id, -1, "invalid", 0, make([]string, 0)} //id, completion, state, needFiles, sharedWith
+			for _, v2 := range v.Devices {
+				folder[v.Id].sharedWith = append(folder[v.Id].sharedWith, v2.Deviceid)
+				device[v2.Deviceid].folderCompletion[v.Id] = -1
+			}
+		}
+
 	} else {
 		return err
 	}
 
 	//Display version
 	log.Println("getting version")
-	resp, err := query_syncthing(config.Url + "/rest/system/version")
+	query = buildVersionURL()
+	resp, err := querySyncthing(query.String())
 	if err == nil {
 		type STVersion struct {
 			Version string

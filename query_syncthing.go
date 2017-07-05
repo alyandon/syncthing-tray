@@ -2,14 +2,14 @@ package main
 
 import (
 	"crypto/tls"
+	"io/ioutil"
 	"log"
-	"time"
 	"net"
 	"net/http"
-	"io/ioutil"
+	"time"
 )
 
-func query_syncthing(url string) (string, error) {
+func querySyncthing(url string) (string, error) {
 
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -28,7 +28,6 @@ func query_syncthing(url string) (string, error) {
 		},
 	}
 
-
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("X-API-Key", config.ApiKey)
 
@@ -37,17 +36,16 @@ func query_syncthing(url string) (string, error) {
 	if err != nil {
 		log.Printf("ERROR: %s\n", err)
 		return "", err
-	} else {
-		defer response.Body.Close()
-		contents, err := ioutil.ReadAll(response.Body)
-		if response.StatusCode == 401 {
-			log.Fatal("Invalid username or password")
-		}
-		if err != nil {
-			log.Printf("ERROR: %s\n", err)
-			return "", err
-		}
-		return string(contents), err
 	}
-	return "", err
+
+	defer response.Body.Close()
+	contents, err := ioutil.ReadAll(response.Body)
+	if response.StatusCode == 401 {
+		log.Fatal("Invalid username or password")
+	}
+	if err != nil {
+		log.Printf("ERROR: %s\n", err)
+		return "", err
+	}
+	return string(contents), err
 }

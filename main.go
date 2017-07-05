@@ -16,6 +16,7 @@ import (
 	"github.com/alex2108/systray"
 	"github.com/toqueteos/webbrowser"
 )
+
 var VersionStr = "unknown"
 var BuildUnixTime = "0"
 
@@ -23,7 +24,7 @@ var mutex = &sync.Mutex{}
 var eventMutex = &sync.Mutex{}
 var dataMutex = &sync.Mutex{}
 var trayMutex = &sync.Mutex{}
-var since_events = 0
+var sinceEvents = 0
 var startTime = "-"
 var eventChan = make(chan event, 10000)
 
@@ -82,23 +83,23 @@ type Folder struct {
 var folder map[string]*Folder
 
 func readEvents() error {
-	res, err := query_syncthing(fmt.Sprintf("%s/rest/events?since=%d", config.Url, since_events))
+	res, err := querySyncthing(fmt.Sprintf("%s/rest/events?since=%d", config.Url, sinceEvents))
 
 	if err != nil {
 		return err
-	} else {
-		var events []event
-		err = json.Unmarshal([]byte(res), &events)
-		if err != nil {
-			return err
-		}
-
-		for _, event := range events {
-			eventChan <- event
-			since_events = event.ID
-		}
-
 	}
+
+	var events []event
+	err = json.Unmarshal([]byte(res), &events)
+	if err != nil {
+		return err
+	}
+
+	for _, event := range events {
+		eventChan <- event
+		sinceEvents = event.ID
+	}
+
 	return nil
 }
 
@@ -106,44 +107,49 @@ func eventProcessor() {
 	for event := range eventChan {
 		mutex.Lock() // mutex with initialitze which may still be running
 		// handle different events
-		if event.Type == "FolderSummary" {
+		needUpdateStatus := true
+		switch event.Type {
+		case "FolderSummary":
 			folder[event.Data.Folder].needFiles = event.Data.Summary.NeedFiles
 			folder[event.Data.Folder].state = event.Data.Summary.State
-			folder[event.Data.Folder].state = event.Data.Summary.State
-			log.Println(event.Data.Summary.NeedDeletes)
+			log.Println("NeedDeletes", event.Data.Summary.NeedDeletes)
 			if event.Data.Summary.NeedDeletes == 0 {
-			    folder[event.Data.Folder].completion = 100 - 100*float64(event.Data.Summary.NeedFiles)/math.Max(float64(event.Data.Summary.GlobalFiles), 1)
-            } else {
-                folder[event.Data.Folder].completion = 95
-            }
-			updateStatus()
-
-		} else if event.Type == "FolderCompletion" {
+				log.Println("foldersummary folder", event.Data.Folder, "needfiles", event.Data.Summary.NeedFiles, "globalfiles", event.Data.Summary.GlobalFiles)
+				folder[event.Data.Folder].completion = 100 - 100*float64(event.Data.Summary.NeedFiles)/math.Max(float64(event.Data.Summary.GlobalFiles), 1)
+				log.Println("foldersummary calculated completion%", folder[event.Data.Folder].completion)
+			} else {
+				folder[event.Data.Folder].completion = 95
+			}
+		case "FolderCompletion":
 			device[event.Data.Device].folderCompletion[event.Data.Folder] = event.Data.Completion
 
-			updateStatus()
-
-		} else if event.Type == "DeviceConnected" {
+		case "DeviceConnected":
 			log.Println(event.Data.Id, "connected")
 			device[event.Data.Id].connected = true
-			updateStatus()
 
-		} else if event.Type == "DeviceDisconnected" {
+		case "DeviceDisconnected":
 			log.Println(event.Data.Id, "disconnected")
 			device[event.Data.Id].connected = false
-			updateStatus()
-		} else if event.Type == "ConfigSaved" {
+
+		case "ConfigSaved":
 			log.Println("got new config -> reinitialize")
-			since_events = event.ID
+			sinceEvents = event.ID
 			mutex.Unlock()
 			initialize()
 			continue
+		default:
+			log.Println("ignoring event type", event.Type, event.Data.Folder)
+			needUpdateStatus = false
+		}
+
+		if needUpdateStatus {
+			updateStatus()
 		}
 		mutex.Unlock()
 	}
 }
 
-func main_loop() {
+func mainEventLoop() {
 	for {
 		eventMutex.Lock()
 		err := readEvents()
@@ -163,25 +169,25 @@ func updateStatus() {
 	uploading := false
 	numConnected := 0
 
-	for _, fol_info := range folder {
+	for _, folderInfo := range folder {
 		//log.Printf("folder %v",fol)
-		//log.Printf("folder_info %v",fol_info)
-		if fol_info.completion < 100 {
+		//log.Printf("folderInfo %v",folderInfo)
+		if folderInfo.completion < 100 {
 			downloading = true
 		}
 	}
 
-	for _, dev_info := range device {
-		//%log.Printf("device %v",dev)
-		//log.Printf("device_info %v",dev_info)
+	for _, deviceInfo := range device {
+		//log.Printf("device %v",dev)
+		//log.Printf("device_info %v",deviceInfo)
 
-		if dev_info.connected {
+		if deviceInfo.connected {
 			numConnected++
 
-			for folderName, completion := range dev_info.folderCompletion {
+			for folderName, completion := range deviceInfo.folderCompletion {
 				if completion < 100 {
 					uploading = true
-					log.Println("DEBUG:",dev_info.name,folderName,completion)
+					log.Println("DEBUG:", deviceInfo.name, folderName, completion)
 				}
 			}
 		}
@@ -217,7 +223,6 @@ func setIcon(numConnected int, downloading, uploading bool) {
 		//not connected
 		log.Println("not connected")
 		systray.SetIcon(icon_not_connected)
-
 	} else if downloading && uploading {
 		//ul+dl
 		log.Println("ul+dl")
@@ -243,6 +248,7 @@ func main() {
 	systray.Run(setupTray)
 }
 
+// TrayEntries contains values to display in the system tray
 type TrayEntries struct {
 	stVersion        *systray.MenuItem
 	connectedDevices *systray.MenuItem
@@ -276,19 +282,19 @@ func setupTray() {
 
 	log.SetOutput(os.Stdout)
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-    
-    buildInt, _ := strconv.Atoi(BuildUnixTime)
-    buildT := time.Unix(int64(buildInt), 0)
-    date := buildT.UTC().Format("2006-01-02 15:04:05 MST")
-	log.Println("Starting Syncthing-Tray",VersionStr,"-",date)
+
+	buildInt, _ := strconv.Atoi(BuildUnixTime)
+	buildT := time.Unix(int64(buildInt), 0)
+	date := buildT.UTC().Format("2006-01-02 15:04:05 MST")
+	log.Println("Starting Syncthing-Tray", VersionStr, "-", date)
 	log.Println("Connecting to syncthing at", config.Url)
 	trayMutex.Lock()
-	go rate_reader()
+	defer trayMutex.Unlock()
+	go rateReader()
 	go eventProcessor()
 	go func() {
 		initialize()
-		main_loop()
-
+		mainEventLoop()
 	}()
 	systray.SetIcon(icon_error)
 	systray.SetTitle("")
@@ -317,7 +323,6 @@ func setupTray() {
 		}
 
 	}()
-	trayMutex.Unlock()
 }
 
 func onClick() { // not usable on ubuntu, left click also displays the menu
