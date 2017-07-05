@@ -1,0 +1,49 @@
+{
+	"ImportPath": "syncthing-tray",
+	"GoVersion": "go1.8",
+	"GodepVersion": "v79",
+	"Deps": [
+		{
+			"ImportPath": "github.com/alex2108/systray",
+			"Rev": "40e874866be2dc2c57ab031bcbde27a76b90721a"
+		},
+		{
+			"ImportPath": "github.com/getlantern/context",
+			"Rev": "624d99b1798d7c5375ea1d3ca4c5b04d58f7c775"
+		},
+		{
+			"ImportPath": "github.com/getlantern/errors",
+			"Rev": "99fa440517e8f3d1e4cd8d6dbed6b41f4c1ed3d6"
+		},
+		{
+			"ImportPath": "github.com/getlantern/golog",
+			"Rev": "cca714f7feb5df8e455f409b549d384441ac4578"
+		},
+		{
+			"ImportPath": "github.com/getlantern/hex",
+			"Rev": "083fba3033ad473db3dd31c9bb368473d37581a7"
+		},
+		{
+			"ImportPath": "github.com/getlantern/hidden",
+			"Rev": "d52a649ab33af200943bb599898dbdcfdbc94cb7"
+		},
+		{
+			"ImportPath": "github.com/getlantern/ops",
+			"Rev": "b70875f5d689a9438bca72aefd7142a2af889b18"
+		},
+		{
+			"ImportPath": "github.com/getlantern/stack",
+			"Comment": "v1.5.0-1-g02f928a",
+			"Rev": "02f928aad224fbccd50d66edd776fc9d1e9f2f2b"
+		},
+		{
+			"ImportPath": "github.com/oxtoacart/bpool",
+			"Rev": "4e1c5567d7c2dd59fa4c7c83d34c2f3528b025d6"
+		},
+		{
+			"ImportPath": "github.com/toqueteos/webbrowser",
+			"Comment": "v1.0-12-g22b60a1",
+			"Rev": "22b60a18af033f78303729d2f68cb0f44213565a"
+		}
+	]
+}
