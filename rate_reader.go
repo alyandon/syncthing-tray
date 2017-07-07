@@ -28,15 +28,12 @@ func rateReader() {
 		prevOutBytes = outBytes
 
 		log.Println("inBytesRate:", formatRate(inBytesRate), "outBytesRate:", formatRate(outBytesRate))
-
-		trayMutex.Lock()
-		trayEntries.rateDisplay.SetTitle("↓: " + formatRate(inBytesRate) + " ↑:" + formatRate(outBytesRate))
-		trayMutex.Unlock()
+		updateRateTitle(inBytesRate, outBytesRate)
 
 		if config.useRates {
-			mutex.Lock()
+			masterMutex.Lock()
 			updateStatus()
-			mutex.Unlock()
+			masterMutex.Unlock()
 		}
 	}
 }
@@ -64,9 +61,10 @@ func readRate() (int64, int64, error) {
 		Connections map[string]connState `json:"connections"`
 	}
 
-	input, err := querySyncthing(config.Url + "/rest/system/connections")
+	query := buildConnectionsURL()
+	input, err := querySyncthing(query.String())
 	if err != nil {
-		log.Println(err)
+		log.Println("connection query failed", err)
 		return 0, 0, err
 	}
 	var res restConn

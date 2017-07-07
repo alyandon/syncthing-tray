@@ -12,7 +12,7 @@ import (
 )
 
 func buildURL(path string, values url.Values) *url.URL {
-	request, _ := url.Parse(config.Url + path)
+	request, _ := url.Parse(config.URL + path)
 	if values != nil {
 		request.RawQuery = values.Encode()
 	}
@@ -48,10 +48,10 @@ func buildDeviceFolderCompletionURL(device string, folder string) *url.URL {
 
 func getFolderState() error {
 	for key, rep := range folder {
-		mutex.Lock()
+		masterMutex.Lock()
 		if folder[key].completion >= 0 {
 			log.Println("already got info for folder", key, "from events, skipping")
-			mutex.Unlock()
+			masterMutex.Unlock()
 			continue
 		}
 		values := url.Values{}
@@ -76,7 +76,7 @@ func getFolderState() error {
 
 			if jsonErr != nil {
 				log.Println("response: " + response)
-				mutex.Unlock()
+				masterMutex.Unlock()
 				return jsonErr
 			}
 
@@ -87,10 +87,10 @@ func getFolderState() error {
 			log.Println("calculated completion%", folder[key].completion)
 
 		} else {
-			mutex.Unlock()
+			masterMutex.Unlock()
 			return err
 		}
-		mutex.Unlock()
+		masterMutex.Unlock()
 		// let events be processed, might save some expensive api calls
 		for len(eventChan) > 0 {
 			time.Sleep(time.Millisecond)
@@ -100,8 +100,8 @@ func getFolderState() error {
 	return nil
 }
 func getConnections() error {
-	mutex.Lock()
-	defer mutex.Unlock()
+	masterMutex.Lock()
+	defer masterMutex.Unlock()
 	log.Println("getting connections")
 	query := buildConnectionsURL()
 	input, err := querySyncthing(query.String())
@@ -130,10 +130,10 @@ func updateUl() error {
 	}
 	for folderName, folderInfo := range folder {
 		for _, deviceName := range folderInfo.sharedWith {
-			mutex.Lock()
+			masterMutex.Lock()
 			if device[deviceName].folderCompletion[folderName] >= 0 {
 				log.Println("already got info for device", deviceName, "folder", folderName, "from events, skipping")
-				mutex.Unlock()
+				masterMutex.Unlock()
 				continue
 			}
 
@@ -143,19 +143,19 @@ func updateUl() error {
 				log.Println("updating upload status for device", deviceName, "folder", folderName)
 				if err != nil {
 					log.Println(err)
-					mutex.Unlock()
+					masterMutex.Unlock()
 					return err
 				}
 				var m Completion
 				err = json.Unmarshal([]byte(out), &m)
 				if err != nil {
 					log.Println(err)
-					mutex.Unlock()
+					masterMutex.Unlock()
 					return err
 				}
 				device[deviceName].folderCompletion[folderName] = m.Completion
 			}
-			mutex.Unlock()
+			masterMutex.Unlock()
 			// let events be processed, might save some expensive api calls
 			for len(eventChan) > 0 {
 				time.Sleep(50 * time.Millisecond)
@@ -193,82 +193,82 @@ func getStartTime() (string, error) {
 func initialize() {
 	// block all before config is read
 	log.Println("wating for lock")
-	mutex.Lock()
+	masterMutex.Lock()
 	log.Println("wating for event lock")
 	eventMutex.Lock()
 	go initializeLocked()
 }
 
 func initializeLocked() {
+	for isReady := false; !isReady; {
+		currentStartTime, err := getStartTime()
 
-	currentStartTime, err := getStartTime()
-	if err == nil {
-
-		if startTime != currentStartTime {
-			log.Println("syncthing restarted at", currentStartTime)
-			startTime = currentStartTime
-			sinceEvents = 0
+		if err == nil {
+			if startTime != currentStartTime {
+				log.Println("syncthing restarted at", currentStartTime)
+				startTime = currentStartTime
+				sinceEvents = 0
+			}
+			err = getConfig()
+			if err != nil {
+				log.Println("error in getConfig")
+			}
+		} else {
+			log.Println("error in getStartTime")
 		}
-		err = getConfig()
+
+		// clean out old events
+		for len(eventChan) > 0 {
+			select {
+			case <-eventChan:
+				continue
+			default:
+				continue
+			}
+		}
+		masterMutex.Unlock()
+		eventMutex.Unlock()
+
+		// get current state
+		if err == nil {
+			err = getFolderState()
+			if err != nil {
+				log.Println("error in getFolderState")
+			}
+		}
+
+		if err == nil {
+			err = getConnections()
+			if err != nil {
+				log.Println("error in getConnections")
+			}
+		}
+
+		if err == nil {
+			err = updateUl()
+			if err != nil {
+				log.Println("error in updateUl")
+			}
+		}
+
 		if err != nil {
-			log.Println("error in getConfig")
+			eventMutex.Lock()
+			masterMutex.Lock()
+			log.Println("error getting syncthing config -> retry in 5s", err)
+
+			trayMutex.Lock()
+			trayEntries.stVersion.SetTitle(fmt.Sprintf("Syncthing: no connection to " + config.URL))
+			trayMutex.Unlock()
+
+			systray.SetIcon(icon_error)
+			time.Sleep(5 * time.Second)
 		}
-	} else {
-		log.Println("error in getStartTime")
-	}
 
-	// clean out old events
-	for len(eventChan) > 0 {
-		select {
-		case <-eventChan:
-			continue
-		default:
-			continue
-		}
-	}
-	mutex.Unlock()
-	eventMutex.Unlock()
-
-	// get current state
-	if err == nil {
-		err = getFolderState()
-		if err != nil {
-			log.Println("error in getFolderState")
-		}
-	}
-
-	if err == nil {
-		err = getConnections()
-		if err != nil {
-			log.Println("error in getConnections")
-		}
-	}
-
-	if err == nil {
-		err = updateUl()
-		if err != nil {
-			log.Println("error in updateUl")
-		}
-	}
-
-	if err != nil {
-		eventMutex.Lock()
-		mutex.Lock()
-		log.Printf("err: %+v", err)
-		log.Println("error getting syncthing config -> retry in 5s")
-
-		trayMutex.Lock()
-		trayEntries.stVersion.SetTitle(fmt.Sprintf("Syncthing: no connection to " + config.Url))
-		trayMutex.Unlock()
-
-		systray.SetIcon(icon_error)
-		time.Sleep(5 * time.Second)
-		initializeLocked()
-		return
+		isReady = (err == nil)
 	}
 	updateStatus()
-
 }
+
 func getConfig() error {
 	log.Println("reading config from syncthing")
 	//create empty state
@@ -285,15 +285,15 @@ func getConfig() error {
 
 	if err == nil {
 		type SyncthingConfigDevice struct {
-			Deviceid string
+			DeviceID string
 			Name     string
 		}
 		type SyncthingConfigFolderDevice struct {
-			Deviceid string
+			DeviceID string
 		}
 
 		type SyncthingConfigFolder struct {
-			Id      string
+			ID      string
 			Devices []SyncthingConfigFolderDevice
 		}
 		type SyncthingConfig struct {
@@ -311,15 +311,15 @@ func getConfig() error {
 		// save config in structs
 		// save Devices
 		for _, v := range m.Devices {
-			device[v.Deviceid] = &Device{v.Name, make(map[string]float64), false}
+			device[v.DeviceID] = &Device{v.Name, make(map[string]float64), false}
 		}
 
 		// save Folders
 		for _, v := range m.Folders {
-			folder[v.Id] = &Folder{v.Id, -1, "invalid", 0, make([]string, 0)} //id, completion, state, needFiles, sharedWith
+			folder[v.ID] = &Folder{v.ID, -1, "invalid", 0, make([]string, 0)} //id, completion, state, needFiles, sharedWith
 			for _, v2 := range v.Devices {
-				folder[v.Id].sharedWith = append(folder[v.Id].sharedWith, v2.Deviceid)
-				device[v2.Deviceid].folderCompletion[v.Id] = -1
+				folder[v.ID].sharedWith = append(folder[v.ID].sharedWith, v2.DeviceID)
+				device[v2.DeviceID].folderCompletion[v.ID] = -1
 			}
 		}
 

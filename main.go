@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -17,16 +18,18 @@ import (
 	"github.com/toqueteos/webbrowser"
 )
 
+// VersionStr build version
 var VersionStr = "unknown"
+
+// BuildUnixTime build timestamp
 var BuildUnixTime = "0"
 
-var mutex = &sync.Mutex{}
-var eventMutex = &sync.Mutex{}
-var dataMutex = &sync.Mutex{}
-var trayMutex = &sync.Mutex{}
+var masterMutex sync.Mutex
+var eventMutex sync.Mutex
+var dataMutex sync.Mutex
 var sinceEvents = 0
 var startTime = "-"
-var eventChan = make(chan event, 10000)
+var eventChan = make(chan event)
 
 var inBytesRate float64
 var outBytesRate float64
@@ -43,7 +46,7 @@ type eventData struct {
 	Summary    folderSummary `json:"summary"`
 	Completion float64       `json:"completion"`
 	Device     string        `json:"device"`
-	Id         string        `json:"id"`
+	ID         string        `json:"id"`
 }
 type event struct {
 	ID   int       `json:"id"`
@@ -52,17 +55,17 @@ type event struct {
 	Data eventData `json:"data"`
 }
 
-// config for connection to syncthing
+// Config for connection to syncthing
 type Config struct {
-	Url      string
-	ApiKey   string
+	URL      string
+	APIKey   string
 	insecure bool
 	useRates bool
 }
 
 var config Config
 
-// configured devices
+// Device represents configured devices
 type Device struct {
 	name             string
 	folderCompletion map[string]float64
@@ -71,7 +74,7 @@ type Device struct {
 
 var device map[string]*Device
 
-// configured folders
+// Folder represents configured folders
 type Folder struct {
 	id         string
 	completion float64
@@ -82,22 +85,34 @@ type Folder struct {
 
 var folder map[string]*Folder
 
+func buildEventsURL(values url.Values) *url.URL {
+	return buildURL("/rest/events", values)
+}
+
 func readEvents() error {
-	res, err := querySyncthing(fmt.Sprintf("%s/rest/events?since=%d", config.Url, sinceEvents))
+	eventMutex.Lock()
+	defer eventMutex.Unlock()
+	values := url.Values{}
+	values.Add("since", strconv.Itoa(sinceEvents))
+	query := buildEventsURL(values)
+	response, err := querySyncthing(query.String())
 
 	if err != nil {
+		log.Println("Events query failed", query.String(), response, err)
 		return err
 	}
 
 	var events []event
-	err = json.Unmarshal([]byte(res), &events)
+	err = json.Unmarshal([]byte(response), &events)
 	if err != nil {
+		log.Println("Parsing events failed", query.String(), response, err)
 		return err
 	}
 
 	for _, event := range events {
 		eventChan <- event
 		sinceEvents = event.ID
+		log.Println("Sent event ID", event.ID)
 	}
 
 	return nil
@@ -105,7 +120,7 @@ func readEvents() error {
 
 func eventProcessor() {
 	for event := range eventChan {
-		mutex.Lock() // mutex with initialitze which may still be running
+		masterMutex.Lock() // mutex with initialitze which may still be running
 		// handle different events
 		needUpdateStatus := true
 		switch event.Type {
@@ -124,17 +139,17 @@ func eventProcessor() {
 			device[event.Data.Device].folderCompletion[event.Data.Folder] = event.Data.Completion
 
 		case "DeviceConnected":
-			log.Println(event.Data.Id, "connected")
-			device[event.Data.Id].connected = true
+			log.Println(event.Data.ID, "connected")
+			device[event.Data.ID].connected = true
 
 		case "DeviceDisconnected":
-			log.Println(event.Data.Id, "disconnected")
-			device[event.Data.Id].connected = false
+			log.Println(event.Data.ID, "disconnected")
+			device[event.Data.ID].connected = false
 
 		case "ConfigSaved":
 			log.Println("got new config -> reinitialize")
 			sinceEvents = event.ID
-			mutex.Unlock()
+			masterMutex.Unlock()
 			initialize()
 			continue
 		default:
@@ -145,19 +160,22 @@ func eventProcessor() {
 		if needUpdateStatus {
 			updateStatus()
 		}
-		mutex.Unlock()
+
+		masterMutex.Unlock()
 	}
 }
 
-func mainEventLoop() {
+func pollEvents() {
 	for {
-		eventMutex.Lock()
 		err := readEvents()
-		eventMutex.Unlock()
-		time.Sleep(time.Millisecond) // otherwise initialize does not have a chance to get the lock since it is aquired here instantly again
+
+		// attempt to re-initialize if an error occurs
 		if err != nil {
 			initialize()
 		}
+
+		// don't hammer the api
+		time.Sleep(500 * time.Millisecond)
 	}
 
 }
@@ -211,11 +229,7 @@ func updateStatus() {
 
 	log.Printf("connected %v", numConnected)
 
-	trayMutex.Lock()
-	trayEntries.connectedDevices.SetTitle(fmt.Sprintf("Connected to %d Devices", numConnected))
-	setIcon(numConnected, downloading, uploading)
-	trayMutex.Unlock()
-
+	updateConnectedDevicesTitle(numConnected, downloading, uploading)
 }
 
 func setIcon(numConnected int, downloading, uploading bool) {
@@ -223,6 +237,10 @@ func setIcon(numConnected int, downloading, uploading bool) {
 		//not connected
 		log.Println("not connected")
 		systray.SetIcon(icon_not_connected)
+	} else if !downloading && !uploading {
+		//idle
+		log.Println("idle")
+		systray.SetIcon(icon_idle)
 	} else if downloading && uploading {
 		//ul+dl
 		log.Println("ul+dl")
@@ -235,12 +253,7 @@ func setIcon(numConnected int, downloading, uploading bool) {
 		//ul
 		log.Println("ul")
 		systray.SetIcon(icon_ul)
-	} else if !downloading && !uploading {
-		//idle
-		log.Println("idle")
-		systray.SetIcon(icon_idle)
 	}
-
 }
 
 func main() {
@@ -259,18 +272,7 @@ type TrayEntries struct {
 
 var trayEntries TrayEntries
 
-func setupTray() {
-	url := flag.String("target", "http://localhost:8384", "Target Syncthing instance")
-	api := flag.String("api", "", "Syncthing Api Key (used for password protected syncthing instance)")
-	insecure := flag.Bool("i", false, "skip verification of SSL certificate")
-	useRates := flag.Bool("R", false, "use transfer rates to determine upload/download state")
-	flag.Parse()
-
-	config.Url = *url
-	config.ApiKey = *api
-	config.insecure = *insecure
-	config.useRates = *useRates
-
+func setupSignalHandler() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	signal.Notify(c, syscall.SIGTERM)
@@ -279,7 +281,27 @@ func setupTray() {
 		systray.Quit()
 		os.Exit(0)
 	}()
+}
 
+func parseOptions() {
+	url := flag.String("target", "http://localhost:8384", "Target Syncthing instance")
+	api := flag.String("api", "", "Syncthing Api Key (used for password protected syncthing instance)")
+	insecure := flag.Bool("i", false, "skip verification of SSL certificate")
+	useRates := flag.Bool("R", false, "use transfer rates to determine upload/download state")
+	flag.Parse()
+
+	if *api == "" {
+		log.Println("api key is a required parameter")
+		os.Exit(1)
+	}
+
+	config.URL = *url
+	config.APIKey = *api
+	config.insecure = *insecure
+	config.useRates = *useRates
+}
+
+func setupLogging() {
 	log.SetOutput(os.Stdout)
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
@@ -287,15 +309,27 @@ func setupTray() {
 	buildT := time.Unix(int64(buildInt), 0)
 	date := buildT.UTC().Format("2006-01-02 15:04:05 MST")
 	log.Println("Starting Syncthing-Tray", VersionStr, "-", date)
-	log.Println("Connecting to syncthing at", config.Url)
-	trayMutex.Lock()
-	defer trayMutex.Unlock()
+	log.Println("Connecting to syncthing at", config.URL)
+}
+
+func spawnWorkers() {
 	go rateReader()
 	go eventProcessor()
 	go func() {
 		initialize()
-		mainEventLoop()
+		pollEvents()
 	}()
+}
+
+func setupTray() {
+
+	parseOptions()
+	setupSignalHandler()
+	setupLogging()
+	spawnWorkers()
+
+	trayMutex.Lock()
+	defer trayMutex.Unlock()
 	systray.SetIcon(icon_error)
 	systray.SetTitle("")
 	systray.SetTooltip("Syncthing-Tray")
@@ -318,7 +352,7 @@ func setupTray() {
 				fmt.Println("Quit now...")
 				os.Exit(0)
 			case <-trayEntries.openBrowser.ClickedCh:
-				webbrowser.Open(config.Url)
+				webbrowser.Open(config.URL)
 			}
 		}
 
@@ -327,5 +361,5 @@ func setupTray() {
 
 func onClick() { // not usable on ubuntu, left click also displays the menu
 	fmt.Println("Opening webinterface in browser")
-	webbrowser.Open(config.Url)
+	webbrowser.Open(config.URL)
 }

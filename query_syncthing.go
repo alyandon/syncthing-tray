@@ -29,7 +29,7 @@ func querySyncthing(url string) (string, error) {
 	}
 
 	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("X-API-Key", config.ApiKey)
+	req.Header.Set("X-API-Key", config.APIKey)
 
 	response, err := client.Do(req)
 
