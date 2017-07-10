@@ -1,0 +1,24 @@
+hash: 21e717bc7723915e69a877c42a730a71f2cbabd79fbdd728ea4bf295d5623335
+updated: 2017-07-10T12:44:48.103828251-05:00
+imports:
+- name: github.com/alex2108/systray
+  version: 40e874866be2dc2c57ab031bcbde27a76b90721a
+- name: github.com/getlantern/context
+  version: 624d99b1798d7c5375ea1d3ca4c5b04d58f7c775
+- name: github.com/getlantern/errors
+  version: 99fa440517e8f3d1e4cd8d6dbed6b41f4c1ed3d6
+- name: github.com/getlantern/golog
+  version: cca714f7feb5df8e455f409b549d384441ac4578
+- name: github.com/getlantern/hex
+  version: 083fba3033ad473db3dd31c9bb368473d37581a7
+- name: github.com/getlantern/hidden
+  version: d52a649ab33af200943bb599898dbdcfdbc94cb7
+- name: github.com/getlantern/ops
+  version: b70875f5d689a9438bca72aefd7142a2af889b18
+- name: github.com/getlantern/stack
+  version: 02f928aad224fbccd50d66edd776fc9d1e9f2f2b
+- name: github.com/oxtoacart/bpool
+  version: 4e1c5567d7c2dd59fa4c7c83d34c2f3528b025d6
+- name: github.com/toqueteos/webbrowser
+  version: 21fc9f95c83442fd164094666f7cb4f9fdd56cd6
+testImports: []
