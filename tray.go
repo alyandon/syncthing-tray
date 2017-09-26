@@ -9,19 +9,25 @@ import (
 	"github.com/toqueteos/webbrowser"
 )
 
-func setTitle(message string) {
+func setMainTitle(message string) {
 	trayEntries.mutex.Lock()
 	defer trayEntries.mutex.Unlock()
 	trayEntries.stVersion.SetTitle(message)
 }
 
-func setErrorTitle(message string) {
-	setTitle(message)
+func setRateTitle(message string) {
+	trayEntries.mutex.Lock()
+	defer trayEntries.mutex.Unlock()
+	trayEntries.rateDisplay.SetTitle(message)
+}
+
+func setMainErrorTitle(message string) {
+	setMainTitle(message)
 	systray.SetIcon(icon_error)
 }
 
 func updateRateTitle(inBytesRate, outBytesRate float64) {
-	setTitle("↓: " + formatRate(inBytesRate) + " ↑:" + formatRate(outBytesRate))
+	setRateTitle("↓: " + formatRate(inBytesRate) + " ↑:" + formatRate(outBytesRate))
 }
 
 func updateConnectedDevicesTitle(numConnected int, downloading, uploading bool) {

@@ -254,7 +254,7 @@ func initializeLocked() {
 			masterMutex.Lock()
 			log.Println("error getting syncthing config -> retry in 5s", err)
 
-			setErrorTitle(fmt.Sprintf("Syncthing: no connection to " + config.URL))
+			setMainErrorTitle(fmt.Sprintf("Syncthing: no connection to " + config.URL))
 			time.Sleep(5 * time.Second)
 		}
 
@@ -334,7 +334,7 @@ func getConfig() error {
 		err = json.Unmarshal([]byte(resp), &m)
 		if err == nil {
 			log.Println("displaying version")
-			setTitle(fmt.Sprintf("Syncthing: %s", m.Version))
+			setMainTitle(fmt.Sprintf("Syncthing: %s", m.Version))
 
 		}
 	}
