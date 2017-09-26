@@ -26,13 +26,31 @@ var BuildUnixTime = "0"
 
 var masterMutex sync.Mutex
 var eventMutex sync.Mutex
-var dataMutex sync.Mutex
+
 var sinceEvents = 0
 var startTime = "-"
 var eventChan = make(chan event)
 
-var inBytesRate float64
-var outBytesRate float64
+type dataRates struct {
+	mutex        sync.Mutex
+	inBytesRate  float64
+	outBytesRate float64
+}
+
+func (transferRates *dataRates) SetRates(inBytesRate float64, outBytesRate float64) {
+	transferRates.mutex.Lock()
+	defer transferRates.mutex.Unlock()
+	transferRates.inBytesRate = inBytesRate
+	transferRates.outBytesRate = outBytesRate
+}
+
+func (transferRates *dataRates) ReadRates() (float64, float64) {
+	transferRates.mutex.Lock()
+	defer transferRates.mutex.Unlock()
+	return transferRates.inBytesRate, transferRates.outBytesRate
+}
+
+var transferRates dataRates
 
 type folderSummary struct {
 	NeedFiles   int    `json:"needFiles"`
@@ -209,51 +227,17 @@ func updateStatus() {
 				}
 			}
 		}
-
-	}
-
-	if config.useRates {
-		dataMutex.Lock()
-		if inBytesRate > 500 {
-			downloading = true
-		} else {
-			downloading = false
-		}
-		if outBytesRate > 500 {
-			uploading = true
-		} else {
-			uploading = false
-		}
-		dataMutex.Unlock()
 	}
 
 	log.Printf("connected %v", numConnected)
 
-	updateConnectedDevicesTitle(numConnected, downloading, uploading)
-}
-
-func setIcon(numConnected int, downloading, uploading bool) {
-	if numConnected == 0 {
-		//not connected
-		log.Println("not connected")
-		systray.SetIcon(icon_not_connected)
-	} else if !downloading && !uploading {
-		//idle
-		log.Println("idle")
-		systray.SetIcon(icon_idle)
-	} else if downloading && uploading {
-		//ul+dl
-		log.Println("ul+dl")
-		systray.SetIcon(icon_ul_dl)
-	} else if downloading && !uploading {
-		//dl
-		log.Println("dl")
-		systray.SetIcon(icon_dl)
-	} else if !downloading && uploading {
-		//ul
-		log.Println("ul")
-		systray.SetIcon(icon_ul)
+	if config.useRates {
+		inBytesRate, outBytesRate := transferRates.ReadRates()
+		downloading = inBytesRate > 500
+		uploading = outBytesRate > 500
 	}
+
+	updateConnectedDevicesTitle(numConnected, downloading, uploading)
 }
 
 func main() {
@@ -263,6 +247,7 @@ func main() {
 
 // TrayEntries contains values to display in the system tray
 type TrayEntries struct {
+	mutex            sync.Mutex
 	stVersion        *systray.MenuItem
 	connectedDevices *systray.MenuItem
 	rateDisplay      *systray.MenuItem
@@ -322,41 +307,11 @@ func spawnWorkers() {
 }
 
 func setupTray() {
-
 	parseOptions()
 	setupSignalHandler()
 	setupLogging()
 	spawnWorkers()
-
-	trayMutex.Lock()
-	defer trayMutex.Unlock()
-	systray.SetIcon(icon_error)
-	systray.SetTitle("")
-	systray.SetTooltip("Syncthing-Tray")
-
-	trayEntries.stVersion = systray.AddMenuItem("not connected", "Syncthing")
-	trayEntries.stVersion.Disable()
-
-	trayEntries.connectedDevices = systray.AddMenuItem("not connected", "Connected devices")
-	trayEntries.connectedDevices.Disable()
-	trayEntries.rateDisplay = systray.AddMenuItem("↓: 0 B/s ↑: 0 B/s", "Upload and download rate")
-	trayEntries.rateDisplay.Disable()
-	trayEntries.openBrowser = systray.AddMenuItem("Open Syncthing GUI", "opens syncthing GUI in default browser")
-
-	trayEntries.quit = systray.AddMenuItem("Quit", "Quit Syncthing-Tray")
-	go func() {
-		for {
-			select {
-			case <-trayEntries.quit.ClickedCh:
-				systray.Quit()
-				fmt.Println("Quit now...")
-				os.Exit(0)
-			case <-trayEntries.openBrowser.ClickedCh:
-				webbrowser.Open(config.URL)
-			}
-		}
-
-	}()
+	setupTrayEntries()
 }
 
 func onClick() { // not usable on ubuntu, left click also displays the menu

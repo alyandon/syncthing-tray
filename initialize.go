@@ -7,8 +7,6 @@ import (
 	"math"
 	"net/url"
 	"time"
-
-	"github.com/alex2108/systray"
 )
 
 func buildURL(path string, values url.Values) *url.URL {
@@ -256,11 +254,7 @@ func initializeLocked() {
 			masterMutex.Lock()
 			log.Println("error getting syncthing config -> retry in 5s", err)
 
-			trayMutex.Lock()
-			trayEntries.stVersion.SetTitle(fmt.Sprintf("Syncthing: no connection to " + config.URL))
-			trayMutex.Unlock()
-
-			systray.SetIcon(icon_error)
+			setErrorTitle(fmt.Sprintf("Syncthing: no connection to " + config.URL))
 			time.Sleep(5 * time.Second)
 		}
 
@@ -340,9 +334,7 @@ func getConfig() error {
 		err = json.Unmarshal([]byte(resp), &m)
 		if err == nil {
 			log.Println("displaying version")
-			trayMutex.Lock()
-			trayEntries.stVersion.SetTitle(fmt.Sprintf("Syncthing: %s", m.Version))
-			trayMutex.Unlock()
+			setTitle(fmt.Sprintf("Syncthing: %s", m.Version))
 
 		}
 	}

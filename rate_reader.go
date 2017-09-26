@@ -19,15 +19,14 @@ func rateReader() {
 			prevInBytes = 0
 		}
 
-		dataMutex.Lock()
-		inBytesRate = float64(inBytes-prevInBytes) / float64(rateInterval)
-		outBytesRate = float64(outBytes-prevOutBytes) / float64(rateInterval)
-		dataMutex.Unlock()
+		inBytesRate := float64(inBytes-prevInBytes) / float64(rateInterval)
+		outBytesRate := float64(outBytes-prevOutBytes) / float64(rateInterval)
+		log.Println("inBytesRate:", formatRate(inBytesRate), "outBytesRate:", formatRate(outBytesRate))
+
+		transferRates.SetRates(inBytesRate, outBytesRate)
 
 		prevInBytes = inBytes
 		prevOutBytes = outBytes
-
-		log.Println("inBytesRate:", formatRate(inBytesRate), "outBytesRate:", formatRate(outBytesRate))
 		updateRateTitle(inBytesRate, outBytesRate)
 
 		if config.useRates {
