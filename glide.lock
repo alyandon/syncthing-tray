@@ -1,8 +1,6 @@
 hash: d9952cd329522823678da680692c87b8beaff1677b5738bbd7ed5aa40299cd5d
-updated: 2017-10-04T09:45:38.978143-05:00
+updated: 2017-10-04T10:24:06.306945-05:00
 imports:
-- name: github.com/alex2108/systray
-  version: 40e874866be2dc2c57ab031bcbde27a76b90721a
 - name: github.com/alyandon/systray
   version: 3b97a419bb165946fe5480d75acc7d5fc243b711
 - name: github.com/getlantern/context
