@@ -107,9 +107,9 @@ func buildEventsURL(values url.Values) *url.URL {
 	return buildURL("/rest/events", values)
 }
 
-func readEvents() error {
-	eventMutex.Lock()
-	defer eventMutex.Unlock()
+func queryEvents() ([]event, error) {
+	loggedEventLock("queryEvents")
+	defer loggedEventUnlock("queryEvents")
 	values := url.Values{}
 	values.Add("since", strconv.Itoa(sinceEvents))
 	query := buildEventsURL(values)
@@ -138,7 +138,7 @@ func readEvents() error {
 
 func eventProcessor() {
 	for event := range eventChan {
-		masterMutex.Lock() // mutex with initialitze which may still be running
+		loggedMasterLock("eventProcessor") // mutex with initialitze which may still be running
 		// handle different events
 		needUpdateStatus := true
 		switch event.Type {
@@ -167,7 +167,7 @@ func eventProcessor() {
 		case "ConfigSaved":
 			log.Println("got new config -> reinitialize")
 			sinceEvents = event.ID
-			masterMutex.Unlock()
+			loggedMasterUnlock("eventProcessor ConfigSaved")
 			initialize()
 			continue
 		default:
@@ -179,7 +179,7 @@ func eventProcessor() {
 			updateStatus()
 		}
 
-		masterMutex.Unlock()
+		loggedMasterUnlock("eventProcessor")
 	}
 }
 
@@ -248,7 +248,7 @@ func main() {
 // TrayEntries contains values to display in the system tray
 type TrayEntries struct {
 	mutex            sync.Mutex
-	stVersion        *systray.MenuItem
+	syncthingVersion *systray.MenuItem
 	connectedDevices *systray.MenuItem
 	rateDisplay      *systray.MenuItem
 	openBrowser      *systray.MenuItem
@@ -288,7 +288,7 @@ func parseOptions() {
 
 func setupLogging() {
 	log.SetOutput(os.Stdout)
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
 	buildInt, _ := strconv.Atoi(BuildUnixTime)
 	buildT := time.Unix(int64(buildInt), 0)

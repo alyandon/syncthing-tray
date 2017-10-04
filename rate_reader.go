@@ -30,9 +30,9 @@ func rateReader() {
 		updateRateTitle(inBytesRate, outBytesRate)
 
 		if config.useRates {
-			masterMutex.Lock()
+			loggedMasterLock("useRates")
 			updateStatus()
-			masterMutex.Unlock()
+			loggedMasterUnlock("useRates")
 		}
 	}
 }

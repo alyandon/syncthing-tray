@@ -44,12 +44,34 @@ func buildDeviceFolderCompletionURL(device string, folder string) *url.URL {
 	return buildURL("/rest/db/completion", values)
 }
 
+func loggedEventLock(msg string) {
+	log.Println("eventMutex acquiring", msg)
+	eventMutex.Lock()
+	log.Println("eventMutex acquired", msg)
+}
+
+func loggedEventUnlock(msg string) {
+	log.Println("eventMutex releasing", msg)
+	eventMutex.Unlock()
+}
+
+func loggedMasterLock(msg string) {
+	log.Println("masterMutex acquiring", msg)
+	masterMutex.Lock()
+	log.Println("masterMutex acquired", msg)
+}
+
+func loggedMasterUnlock(msg string) {
+	log.Println("masterMutex releasing", msg)
+	masterMutex.Unlock()
+}
+
 func getFolderState() error {
 	for key, rep := range folder {
-		masterMutex.Lock()
+		loggedMasterLock("getFolderState")
 		if folder[key].completion >= 0 {
 			log.Println("already got info for folder", key, "from events, skipping")
-			masterMutex.Unlock()
+			loggedMasterUnlock("getFolderState completion>0")
 			continue
 		}
 		values := url.Values{}
@@ -74,7 +96,7 @@ func getFolderState() error {
 
 			if jsonErr != nil {
 				log.Println("response: " + response)
-				masterMutex.Unlock()
+				loggedMasterUnlock("getFolderState jsonErr")
 				return jsonErr
 			}
 
@@ -85,10 +107,10 @@ func getFolderState() error {
 			log.Println("calculated completion%", folder[key].completion)
 
 		} else {
-			masterMutex.Unlock()
+			loggedMasterUnlock("getFolderState err")
 			return err
 		}
-		masterMutex.Unlock()
+		loggedMasterUnlock("getFolderState eventChan")
 		// let events be processed, might save some expensive api calls
 		for len(eventChan) > 0 {
 			time.Sleep(time.Millisecond)
@@ -97,9 +119,10 @@ func getFolderState() error {
 
 	return nil
 }
+
 func getConnections() error {
-	masterMutex.Lock()
-	defer masterMutex.Unlock()
+	loggedMasterLock("getConnections")
+	defer loggedMasterUnlock("getConnections")
 	log.Println("getting connections")
 	query := buildConnectionsURL()
 	input, err := querySyncthing(query.String())
@@ -121,17 +144,17 @@ func getConnections() error {
 
 	return err
 }
-func updateUl() error {
 
+func updateUl() error {
 	type Completion struct {
 		Completion float64
 	}
 	for folderName, folderInfo := range folder {
 		for _, deviceName := range folderInfo.sharedWith {
-			masterMutex.Lock()
+			loggedMasterLock("updateUl")
 			if device[deviceName].folderCompletion[folderName] >= 0 {
 				log.Println("already got info for device", deviceName, "folder", folderName, "from events, skipping")
-				masterMutex.Unlock()
+				loggedMasterUnlock("updateUl folder>0")
 				continue
 			}
 
@@ -141,21 +164,22 @@ func updateUl() error {
 				log.Println("updating upload status for device", deviceName, "folder", folderName)
 				if err != nil {
 					log.Println(err)
-					masterMutex.Unlock()
+					loggedMasterUnlock("updateUl query error")
 					return err
 				}
 				var m Completion
 				err = json.Unmarshal([]byte(out), &m)
 				if err != nil {
 					log.Println(err)
-					masterMutex.Unlock()
+					loggedMasterUnlock("updateUl unmarshal error")
 					return err
 				}
 				device[deviceName].folderCompletion[folderName] = m.Completion
 			}
-			masterMutex.Unlock()
+			loggedMasterUnlock("updateUl folderInfo loop")
 			// let events be processed, might save some expensive api calls
 			for len(eventChan) > 0 {
+				log.Println("sleeping for", len(eventChan), "events")
 				time.Sleep(50 * time.Millisecond)
 			}
 		}
@@ -191,9 +215,9 @@ func getStartTime() (string, error) {
 func initialize() {
 	// block all before config is read
 	log.Println("wating for lock")
-	masterMutex.Lock()
+	loggedMasterLock("initialize")
 	log.Println("wating for event lock")
-	eventMutex.Lock()
+	loggedEventLock("initialize")
 	go initializeLocked()
 }
 
@@ -224,8 +248,8 @@ func initializeLocked() {
 				continue
 			}
 		}
-		masterMutex.Unlock()
-		eventMutex.Unlock()
+		loggedMasterUnlock("initializedLock")
+		loggedEventUnlock("initializedLock")
 
 		// get current state
 		if err == nil {
@@ -250,8 +274,8 @@ func initializeLocked() {
 		}
 
 		if err != nil {
-			eventMutex.Lock()
-			masterMutex.Lock()
+			loggedEventLock("initializedLock")
+			loggedMasterLock("initializedLock")
 			log.Println("error getting syncthing config -> retry in 5s", err)
 
 			setMainErrorTitle(fmt.Sprintf("Syncthing: no connection to " + config.URL))

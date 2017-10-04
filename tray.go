@@ -12,7 +12,7 @@ import (
 func setMainTitle(message string) {
 	trayEntries.mutex.Lock()
 	defer trayEntries.mutex.Unlock()
-	trayEntries.stVersion.SetTitle(message)
+	trayEntries.syncthingVersion.SetTitle(message)
 }
 
 func setRateTitle(message string) {
@@ -22,7 +22,9 @@ func setRateTitle(message string) {
 }
 
 func setMainErrorTitle(message string) {
-	setMainTitle(message)
+	trayEntries.mutex.Lock()
+	defer trayEntries.mutex.Unlock()
+	trayEntries.syncthingVersion.SetTitle(message)
 	systray.SetIcon(icon_error)
 }
 
@@ -68,8 +70,8 @@ func setupTrayEntries() {
 	systray.SetTitle("")
 	systray.SetTooltip("Syncthing-Tray")
 
-	trayEntries.stVersion = systray.AddMenuItem("not connected", "Syncthing")
-	trayEntries.stVersion.Disable()
+	trayEntries.syncthingVersion = systray.AddMenuItem("not connected", "Syncthing")
+	trayEntries.syncthingVersion.Disable()
 
 	trayEntries.connectedDevices = systray.AddMenuItem("not connected", "Connected devices")
 	trayEntries.connectedDevices.Disable()
