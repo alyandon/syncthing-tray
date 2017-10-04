@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
 	"log"
 	"math"
 	"net/url"
@@ -14,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alex2108/systray"
+	"github.com/alyandon/systray"
 	"github.com/toqueteos/webbrowser"
 )
 
@@ -117,21 +116,34 @@ func queryEvents() ([]event, error) {
 
 	if err != nil {
 		log.Println("Events query failed", query.String(), response, err)
-		return err
+		return nil, err
 	}
 
 	var events []event
 	err = json.Unmarshal([]byte(response), &events)
 	if err != nil {
 		log.Println("Parsing events failed", query.String(), response, err)
-		return err
+		return nil, err
 	}
 
+	return events, nil
+}
+
+func readEvents() error {
+	log.Println("readEvents")
+	events, err := queryEvents()
+	if err != nil {
+		log.Println("readEvents aborting", err)
+		return nil
+	}
+	log.Println("readEvents events:", len(events))
 	for _, event := range events {
+		log.Println("Sending event ID", event.ID)
 		eventChan <- event
 		sinceEvents = event.ID
 		log.Println("Sent event ID", event.ID)
 	}
+	log.Println("done reading events channel")
 
 	return nil
 }
@@ -233,16 +245,16 @@ func updateStatus() {
 
 	if config.useRates {
 		inBytesRate, outBytesRate := transferRates.ReadRates()
-		downloading = inBytesRate > 500
-		uploading = outBytesRate > 500
+		downloading = inBytesRate > 1
+		uploading = outBytesRate > 1
 	}
 
 	updateConnectedDevicesTitle(numConnected, downloading, uploading)
 }
 
 func main() {
-	// must be done at the beginning
-	systray.Run(setupTray)
+	// start and block until systray.Quit() is called
+	systray.Run(applicationSetup)
 }
 
 // TrayEntries contains values to display in the system tray
@@ -297,7 +309,7 @@ func setupLogging() {
 	log.Println("Connecting to syncthing at", config.URL)
 }
 
-func spawnWorkers() {
+func spawnBackgroundWorkers() {
 	go rateReader()
 	go eventProcessor()
 	go func() {
@@ -306,15 +318,21 @@ func spawnWorkers() {
 	}()
 }
 
-func setupTray() {
+func applicationSetup() {
+	// get initial setup out of the way
 	parseOptions()
 	setupSignalHandler()
 	setupLogging()
-	spawnWorkers()
+
+	// setup systray menu entries and spawn systray event loop
 	setupTrayEntries()
+	spawnTrayEventLoop()
+
+	// background workers for the main application
+	spawnBackgroundWorkers()
 }
 
 func onClick() { // not usable on ubuntu, left click also displays the menu
-	fmt.Println("Opening webinterface in browser")
+	log.Println("Opening webinterface in browser")
 	webbrowser.Open(config.URL)
 }

@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/alex2108/systray"
+	"github.com/alyandon/systray"
 	"github.com/toqueteos/webbrowser"
 )
 
@@ -63,6 +63,29 @@ func updateIcon(numConnected int, downloading, uploading bool) {
 	}
 }
 
+func spawnTrayEventLoop() {
+	go func() {
+		for {
+			select {
+			case <-trayEntries.quit.ClickedCh:
+				log.Println("Quitting now...")
+				// systray doesn't appear to be thread-safe (at least on darwin)
+				log.Println("acquiring tray mutex")
+				trayEntries.mutex.Lock()
+				log.Println("tray mutex acquired - sending quit message")
+				systray.Quit()
+				log.Println("quit message sent - unlocking tray mutex")
+				trayEntries.mutex.Unlock()
+				log.Println("tray mutex unlocked - quitting program")
+				os.Exit(0)
+			case <-trayEntries.openBrowser.ClickedCh:
+				webbrowser.Open(config.URL)
+			}
+		}
+
+	}()
+}
+
 func setupTrayEntries() {
 	trayEntries.mutex.Lock()
 	defer trayEntries.mutex.Unlock()
@@ -80,17 +103,4 @@ func setupTrayEntries() {
 	trayEntries.openBrowser = systray.AddMenuItem("Open Syncthing GUI", "opens syncthing GUI in default browser")
 
 	trayEntries.quit = systray.AddMenuItem("Quit", "Quit Syncthing-Tray")
-	go func() {
-		for {
-			select {
-			case <-trayEntries.quit.ClickedCh:
-				systray.Quit()
-				fmt.Println("Quit now...")
-				os.Exit(0)
-			case <-trayEntries.openBrowser.ClickedCh:
-				webbrowser.Open(config.URL)
-			}
-		}
-
-	}()
 }

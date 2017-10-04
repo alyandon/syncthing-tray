@@ -13,10 +13,12 @@ func rateReader() {
 	var rateInterval int64 = 10
 
 	for range time.Tick(time.Duration(rateInterval) * time.Second) {
-		inBytes, outBytes, err := readRate()
+		inBytes, outBytes, err := queryRate()
+
 		if err != nil {
 			prevInBytes = 0
 			prevInBytes = 0
+			continue
 		}
 
 		inBytesRate := float64(inBytes-prevInBytes) / float64(rateInterval)
@@ -46,7 +48,7 @@ func formatRate(rate float64) string {
 	return fmt.Sprintf("%.2f MiB/s", rate/(1024*1024))
 }
 
-func readRate() (int64, int64, error) {
+func queryRate() (int64, int64, error) {
 
 	type connState struct {
 		Connected     bool   `json:"connected"`

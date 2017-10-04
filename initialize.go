@@ -350,16 +350,15 @@ func getConfig() error {
 	query = buildVersionURL()
 	resp, err := querySyncthing(query.String())
 	if err == nil {
-		type STVersion struct {
+		type payload struct {
 			Version string
 		}
 
-		var m STVersion
+		var m payload
 		err = json.Unmarshal([]byte(resp), &m)
 		if err == nil {
 			log.Println("displaying version")
 			setMainTitle(fmt.Sprintf("Syncthing: %s", m.Version))
-
 		}
 	}
 	return err
