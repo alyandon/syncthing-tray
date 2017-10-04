@@ -1,8 +1,10 @@
-hash: 21e717bc7723915e69a877c42a730a71f2cbabd79fbdd728ea4bf295d5623335
-updated: 2017-07-10T12:44:48.103828251-05:00
+hash: d9952cd329522823678da680692c87b8beaff1677b5738bbd7ed5aa40299cd5d
+updated: 2017-10-04T09:45:38.978143-05:00
 imports:
 - name: github.com/alex2108/systray
   version: 40e874866be2dc2c57ab031bcbde27a76b90721a
+- name: github.com/alyandon/systray
+  version: 3b97a419bb165946fe5480d75acc7d5fc243b711
 - name: github.com/getlantern/context
   version: 624d99b1798d7c5375ea1d3ca4c5b04d58f7c775
 - name: github.com/getlantern/errors

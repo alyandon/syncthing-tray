@@ -1,5 +1,6 @@
 package: syncthing-tray
 import:
-- package: github.com/alex2108/systray
+- package: github.com/alyandon/systray
+  version: ^0.0.1
 - package: github.com/toqueteos/webbrowser
   version: ^1.0.0
