@@ -81,7 +81,7 @@ func getFolderState() error {
 
 		if err != nil {
 			log.Println("error fetching folder info querySyncthing")
-			log.Println("received reponse: " + response)
+			log.Println("received response: " + response)
 		}
 		log.Println("getting state for folder", rep.id)
 		if err == nil {
@@ -127,7 +127,7 @@ func getConnections() error {
 	query := buildConnectionsURL()
 	input, err := querySyncthing(query.String())
 	if err != nil {
-		log.Println(err)
+		log.Println("getConnections error", err)
 		return err
 	}
 	var res map[string]interface{}
@@ -214,9 +214,7 @@ func getStartTime() (string, error) {
 // helper to get a lock before starting the new thread that can run in background after a lock is aquired
 func initialize() {
 	// block all before config is read
-	log.Println("wating for lock")
 	loggedMasterLock("initialize")
-	log.Println("wating for event lock")
 	loggedEventLock("initialize")
 	go initializeLocked()
 }

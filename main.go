@@ -28,7 +28,7 @@ var eventMutex sync.Mutex
 
 var sinceEvents = 0
 var startTime = "-"
-var eventChan = make(chan event)
+var eventChan = make(chan event, 100)
 
 type dataRates struct {
 	mutex        sync.Mutex
@@ -134,7 +134,7 @@ func readEvents() error {
 	events, err := queryEvents()
 	if err != nil {
 		log.Println("readEvents aborting", err)
-		return nil
+		return err
 	}
 	log.Println("readEvents events:", len(events))
 	for _, event := range events {
@@ -150,11 +150,12 @@ func readEvents() error {
 
 func eventProcessor() {
 	for event := range eventChan {
-		loggedMasterLock("eventProcessor") // mutex with initialitze which may still be running
+		loggedMasterLock("eventProcessor") // mutex with initialize which may still be running
 		// handle different events
 		needUpdateStatus := true
 		switch event.Type {
 		case "FolderSummary":
+			log.Println("Received FolderSummary")
 			folder[event.Data.Folder].needFiles = event.Data.Summary.NeedFiles
 			folder[event.Data.Folder].state = event.Data.Summary.State
 			log.Println("NeedDeletes", event.Data.Summary.NeedDeletes)
@@ -166,18 +167,19 @@ func eventProcessor() {
 				folder[event.Data.Folder].completion = 95
 			}
 		case "FolderCompletion":
+			log.Println("Received FolderCompletion")
 			device[event.Data.Device].folderCompletion[event.Data.Folder] = event.Data.Completion
 
 		case "DeviceConnected":
-			log.Println(event.Data.ID, "connected")
+			log.Println("Received DeviceConnected", event.Data.ID)
 			device[event.Data.ID].connected = true
 
 		case "DeviceDisconnected":
-			log.Println(event.Data.ID, "disconnected")
+			log.Println("Received DeviceDisconnected", event.Data.ID)
 			device[event.Data.ID].connected = false
 
 		case "ConfigSaved":
-			log.Println("got new config -> reinitialize")
+			log.Println("Received ConfigSaved - re-initializing")
 			sinceEvents = event.ID
 			loggedMasterUnlock("eventProcessor ConfigSaved")
 			initialize()
@@ -241,7 +243,7 @@ func updateStatus() {
 		}
 	}
 
-	log.Printf("connected %v", numConnected)
+	log.Printf("Number of connected devices: %v", numConnected)
 
 	if config.useRates {
 		inBytesRate, outBytesRate := transferRates.ReadRates()

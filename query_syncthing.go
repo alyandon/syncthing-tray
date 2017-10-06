@@ -34,7 +34,7 @@ func querySyncthing(url string) (string, error) {
 	response, err := client.Do(req)
 
 	if err != nil {
-		log.Printf("ERROR: %s\n", err)
+		log.Println("Error sending client request", err)
 		return "", err
 	}
 
@@ -44,7 +44,7 @@ func querySyncthing(url string) (string, error) {
 		log.Fatal("Invalid username or password")
 	}
 	if err != nil {
-		log.Printf("ERROR: %s\n", err)
+		log.Println("Error reading response", err)
 		return "", err
 	}
 	return string(contents), err

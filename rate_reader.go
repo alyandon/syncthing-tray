@@ -15,9 +15,9 @@ func rateReader() {
 	for range time.Tick(time.Duration(rateInterval) * time.Second) {
 		inBytes, outBytes, err := queryRate()
 
-		if err != nil {
+		if err != nil || inBytes < prevInBytes || outBytes < prevOutBytes {
 			prevInBytes = 0
-			prevInBytes = 0
+			prevOutBytes = 0
 			continue
 		}
 
